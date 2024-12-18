@@ -8,31 +8,42 @@ from skimage.transform import resize
 
 # -----------------------------------------------------------------------------------------------------------
 
-# Function to apply DWT and compress the image
-def wavelet_compression(image, wavelet='bior1.3', threshold=0.1):
-    coeffs2 = []
+# Optimize parameters
+threshold=0.1
+quant_step=5
+level=3
+
+# Function to apply Multi-level wavelet compression with Quantization
+def wavelet_compression(image, wavelet='bior1.3', threshold=0.1, quant_step=5, level=3):
+    coeffs_all_channels = []
     for i in range(image.shape[2]):
-        channel = image[:,:,i]
-        coeffs2.append(pywt.dwt2(channel, wavelet))  # Apply DWT to each channel
+        coeffs = pywt.wavedec2(image[:, :, i], wavelet, level=level)
+        compressed_coeffs = []
+        for coeff in coeffs:
+            if isinstance(coeff, tuple):
+                # For detail coefficients (LH,HL,HH) quantize each component
+                compressed_coeffs.append(tuple(np.round(c / quant_step) for c in coeff))
+            else:
+                # For approximation coefficients (LL)
+                compressed_coeffs.append(np.round(coeff / quant_step))
 
-    compressed_coeffs = []
-    for i, (LL, (LH, HL, HH)) in enumerate(coeffs2):
-        LL = np.where(np.abs(LL) < threshold, 0, LL)
-        LH = np.where(np.abs(LH) < threshold, 0, LH)
-        HL = np.where(np.abs(HL) < threshold, 0, HL)
-        HH = np.where(np.abs(HH) < threshold, 0, HH)
-        compressed_coeffs.append((LL, (LH, HL, HH)))
+        coeffs_all_channels.append(compressed_coeffs)
+    return coeffs_all_channels
 
-    return compressed_coeffs
-
-# Function to perform inverse DWT and reconstruct the image
-def inverse_wavelet_compression(compressed_coeffs, wavelet='bior1.3', original_shape=None):
+# Multi-level wavelet decompression
+def inverse_wavelet_compression(coeffs_all_channels, wavelet='bior1.3', quant_step=5, original_shape=None):
     reconstructed_image = np.zeros(original_shape, dtype=np.float32)
-    for i in range(original_shape[2]):
-        LL, (LH, HL, HH) = compressed_coeffs[i]
-        reconstructed_channel = pywt.idwt2((LL, (LH, HL, HH)), wavelet)
-        reconstructed_image[:,:,i] = reconstructed_channel
-
+    for i, coeffs in enumerate(coeffs_all_channels):
+        dequantized_coeffs = []
+        for coeff in coeffs:
+            if isinstance(coeff, tuple):
+                dequantized_coeffs.append(tuple(c * quant_step for c in coeff))
+            else:
+                dequantized_coeffs.append(coeff * quant_step)
+        
+        reconstructed_channel = pywt.waverec2(dequantized_coeffs, wavelet)
+        reconstructed_image[:, :, i] = reconstructed_channel[:original_shape[0], :original_shape[1]]
+    
     return np.clip(reconstructed_image, 0, 255).astype(np.uint8)
 
 # Function to evaluate PSNR
@@ -60,30 +71,65 @@ image = io.imread(image_path)
 original_shape = image.shape
 
 # Apply wavelet compression to the image
-compressed_coeffs = wavelet_compression(image, wavelet='bior1.3', threshold=0.1)
+compressed_coeffs = wavelet_compression(image, wavelet='bior1.3', threshold=threshold, quant_step=quant_step, level=level)
 
 # Reconstruct the image from compressed coefficients
-image_reconstructed = inverse_wavelet_compression(compressed_coeffs, wavelet='bior1.3', original_shape=original_shape)
+image_reconstructed = inverse_wavelet_compression(compressed_coeffs, wavelet='bior1.3', quant_step=quant_step, original_shape=original_shape)
 
-# Resizing the reconstructed image to half its original size
-half_res_image = resize(image_reconstructed, (original_shape[0] // 2, original_shape[1] // 2), anti_aliasing=True)
-
-# Expanding the resized image back to the original size
-expanded_image = resize(half_res_image, (original_shape[0], original_shape[1]), anti_aliasing=True)
-
-# Display the original, resized (half size), and expanded images
+# Display the original and reconstructed images
 plt.figure(figsize=(15, 5))
-plt.subplot(1, 3, 1)
+plt.subplot(1, 2, 1)
 plt.title("Original Image")
 plt.imshow(image)
-plt.subplot(1, 3, 2)
-plt.title("Resized (Half Size) Image")
-plt.imshow(half_res_image)
-plt.subplot(1, 3, 3)
-plt.title("Expanded Image")
-plt.imshow(expanded_image)
+
+plt.subplot(1, 2, 2)
+plt.title("Reconstructed Image")
+plt.imshow(image_reconstructed)
 plt.show()
 
-# Calculate PSNR (Peak Signal-to-Noise Ratio) between original and expanded image
-psnr_value = psnr(image, expanded_image)
-print(f"PSNR (dB) between original and expanded image: {psnr_value}")
+# Calculate PSNR (Peak Signal-to-Noise Ratio) between original and reconstructed image
+psnr_value = psnr(image, image_reconstructed)
+print(f"PSNR (dB) between original and reconstructed image: {psnr_value}")
+
+# Function to visualize wavelet decomposition and reconstruction at each level with PSNR
+def visualize_levels_with_psnr(image, wavelet='bior1.3', threshold=0.1, quant_step=5, level=3):
+    coeffs_all_channels = []
+    for i in range(image.shape[2]):
+        coeffs = pywt.wavedec2(image[:, :, i], wavelet, level=level)
+        coeffs_all_channels.append(coeffs)
+
+    plt.figure(figsize=(15, 5 * level))
+
+    # Reconstruct at each level by zeroing out higher-level coefficients
+    for lvl in range(1, level + 1):
+        reconstructed_image = np.zeros(image.shape, dtype=np.float32)
+        for i in range(image.shape[2]):
+            coeffs = coeffs_all_channels[i]
+            reduced_coeffs = []
+            for j, c in enumerate(coeffs):
+                if j < lvl:
+                    reduced_coeffs.append(c)
+                else:
+                    if isinstance(c, tuple):
+                        reduced_coeffs.append(tuple(np.zeros_like(band) for band in c))
+                    else:
+                        reduced_coeffs.append(np.zeros_like(c))
+            
+            reconstructed_channel = pywt.waverec2(reduced_coeffs, wavelet)
+            reconstructed_channel = reconstructed_channel[:image.shape[0], :image.shape[1]]
+            reconstructed_image[:, :, i] = reconstructed_channel
+
+        reconstructed_image = np.clip(reconstructed_image, 0, 255).astype(np.uint8)
+        
+        psnr_value = psnr(image, reconstructed_image)
+        print(f"PSNR at Level {lvl}: {psnr_value:.2f} dB")
+
+        plt.subplot(level, 1, lvl)
+        plt.title(f"Reconstructed at Level {lvl} (PSNR: {psnr_value:.2f} dB)")
+        plt.imshow(reconstructed_image)
+        plt.axis('off')
+    
+    plt.tight_layout()
+    plt.show()
+
+visualize_levels_with_psnr(image, wavelet='bior1.3', threshold=threshold, quant_step=quant_step, level=level)
