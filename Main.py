@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import kagglehub
 from skimage import io
 import pywt
+from skimage.metrics import structural_similarity as ssim
 
 # Optimize Parameters
 threshold = 0.1
@@ -52,10 +53,23 @@ def psnr(original, compressed):
     max_pixel = 255.0
     return 20 * np.log10(max_pixel / np.sqrt(mse))
 
+# Function to evaluate SSIM
+def calculate_ssim(original, compressed):
+    # Convert images to grayscale if they are RGB
+    if original.ndim == 3:
+        original_gray = np.mean(original, axis=2)
+        compressed_gray = np.mean(compressed, axis=2)
+    else:
+        original_gray = original
+        compressed_gray = compressed
 
-# Function to visualize wavelet decomposition and reconstruction at each level with PSNR
+    ssim_value = ssim(original_gray, compressed_gray, data_range=compressed_gray.max() - compressed_gray.min())
+    return ssim_value
+
+# Function to visualize wavelet decomposition and reconstruction at each level with PSNR and SSIM
 def visualize_levels_with_psnr(image, wavelet_types, threshold=0.1, quant_step=5, level=3):
     psnr_values_all = {wavelet: [] for wavelet in wavelet_types}
+    ssim_values_all = {wavelet: [] for wavelet in wavelet_types}
 
     for wavelet in wavelet_types:
         coeffs_all_channels = []
@@ -80,9 +94,9 @@ def visualize_levels_with_psnr(image, wavelet_types, threshold=0.1, quant_step=5
                     if j <= lvl:
                         reduced_coeffs.append(c)
                     else:
-                        if isinstance(c, tuple):
+                        if isinstance(c, tuple):  
                             reduced_coeffs.append(tuple(np.zeros_like(band) for band in c))
-                        else:
+                        else:  
                             reduced_coeffs.append(np.zeros_like(c))
 
                 reconstructed_channel = pywt.waverec2(reduced_coeffs, wavelet)
@@ -90,30 +104,50 @@ def visualize_levels_with_psnr(image, wavelet_types, threshold=0.1, quant_step=5
                 reconstructed_image[:, :, i] = reconstructed_channel
 
             reconstructed_image = np.clip(reconstructed_image, 0, 255).astype(np.uint8)
-
             psnr_value = psnr(image, reconstructed_image)
+            ssim_value = calculate_ssim(image, reconstructed_image)
             psnr_values_all[wavelet].append(psnr_value)
-            print(f"Wavelet: {wavelet}, Level {lvl + 1}: PSNR: {psnr_value:.2f} dB")
+            ssim_values_all[wavelet].append(ssim_value)
+            print(f"Wavelet: {wavelet}, Level {lvl + 1}: PSNR: {psnr_value:.2f} dB, SSIM: {ssim_value:.4f}")
 
-            # Add reconstructed image in subsequent plots
+           # Add reconstructed image in subsequent plots
             plt.subplot(1, level + 1, lvl + 2)
-            plt.title(f"Reconstructed (Level {lvl + 1} {wavelet})\nPSNR: {psnr_value:.2f} dB")
+            plt.title(f"Reconstructed (Level {lvl + 1} {wavelet})\nPSNR: {psnr_value:.2f} dB, SSIM: {ssim_value:.4f}")
             plt.imshow(reconstructed_image)
             plt.axis('off')
 
         plt.tight_layout()
+        manager = plt.get_current_fig_manager()
+        manager.window.state('zoomed')
         plt.show()
+
 
     # Plot PSNR values for each wavelet type
     plt.figure(figsize=(10, 6))
     for wavelet, psnr_values in psnr_values_all.items():
-        plt.plot(range(1, level + 1), psnr_values, marker='o', label=wavelet)
+        plt.plot(range(1, level + 1), psnr_values, marker='o', label=f"{wavelet} (PSNR)")
 
     plt.title("PSNR across Levels for All Wavelet Types")
     plt.xlabel("Level")
     plt.ylabel("PSNR (dB)")
     plt.legend()
     plt.grid(True, linestyle='--', alpha=0.7)
+    manager = plt.get_current_fig_manager()
+    manager.window.state('zoomed')
+    plt.show()
+
+    # Plot SSIM values for each wavelet type
+    plt.figure(figsize=(10, 6))
+    for wavelet, ssim_values in ssim_values_all.items():
+        plt.plot(range(1, level + 1), ssim_values, marker='o', label=f"{wavelet} (SSIM)")
+
+    plt.title("SSIM across Levels for All Wavelet Types")
+    plt.xlabel("Level")
+    plt.ylabel("SSIM")
+    plt.legend()
+    plt.grid(True, linestyle='--', alpha=0.7)
+    manager = plt.get_current_fig_manager()
+    manager.window.state('zoomed')
     plt.show()
 
 # ------------------------------------------------------------------------------------------------------------
@@ -138,16 +172,18 @@ image_reconstructed = inverse_wavelet_compression(compressed_coeffs, wavelet='bi
 
 # Display the original and reconstructed images
 plt.figure(figsize=(15, 5))
-plt.subplot(1, 3, 1)
+plt.subplot(1, 2, 1)
 plt.title("Original Image")
 plt.imshow(image)
 plt.axis('off')
 
-plt.subplot(1, 3, 2)
+plt.subplot(1, 2, 2)
 plt.title("Reconstructed Image")
 plt.imshow(image_reconstructed)
 plt.axis('off')
 
+manager = plt.get_current_fig_manager()
+manager.window.state('zoomed')
 plt.show()
 # Calculate PSNR (Peak Signal-to-Noise Ratio) between original and reconstructed image
 psnr_value = psnr(image, image_reconstructed)
