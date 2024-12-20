@@ -5,6 +5,8 @@ import kagglehub
 from skimage import io
 import pywt
 from skimage.metrics import structural_similarity as ssim
+import time
+import tracemalloc
 
 # Optimize Parameters
 threshold = 0.1
@@ -150,6 +152,56 @@ def visualize_levels_with_psnr(image, wavelet_types, threshold=0.1, quant_step=5
     manager.window.state('zoomed')
     plt.show()
 
+    compressed_coeffs = wavelet_compression(image, wavelet='bior1.3', quant_step=quant_step, level=level)
+    calculate_compression_ratio(image, compressed_coeffs, quant_step)
+    evaluate_performance(image, wavelet='bior1.3', quant_step=quant_step, level=level)
+
+def calculate_compression_ratio(original_image, compressed_coeffs, quant_step):
+    original_size = original_image.nbytes
+    
+    compressed_size = 0
+    for channel in compressed_coeffs:
+        for coeff in channel:
+            if isinstance(coeff, tuple):
+                for sub_coeff in coeff:
+                    compressed_size += np.count_nonzero(np.abs(sub_coeff) > quant_step) * sub_coeff.itemsize
+            else:
+                compressed_size += np.count_nonzero(np.abs(coeff) > quant_step) * coeff.itemsize
+
+    compression_ratio = original_size / compressed_size
+
+    print(f"Original Size: {original_size} bytes")
+    print(f"Compressed Size: {compressed_size} bytes")
+    print(f"Compression Ratio: {compression_ratio:.2f}")
+    
+    return compression_ratio
+
+
+def evaluate_performance(image, wavelet='bior1.3', quant_step=5, level=3):
+    tracemalloc.start()
+    start_time = time.time()
+
+    compressed_coeffs = wavelet_compression(image, wavelet=wavelet, quant_step=quant_step, level=level)
+
+    end_time = time.time()
+    peak_memory = tracemalloc.get_traced_memory()[1]
+    tracemalloc.stop()
+
+    compression_time = end_time - start_time
+    print(f"Compression Time: {compression_time:.2f} seconds")
+    print(f"Peak Memory Usage: {peak_memory / 1024**2:.2f} MB")
+
+    # Measure reconstruction time
+    start_time = time.time()
+
+    reconstructed_image = inverse_wavelet_compression(
+        compressed_coeffs, wavelet=wavelet, quant_step=quant_step, original_shape=image.shape
+    )
+
+    end_time = time.time()
+    reconstruction_time = end_time - start_time
+    print(f"Reconstruction Time: {reconstruction_time:.2f} seconds")
+    return compressed_coeffs, reconstructed_image
 # ------------------------------------------------------------------------------------------------------------
 
 path = kagglehub.dataset_download("adityachandrasekhar/image-super-resolution")
