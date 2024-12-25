@@ -79,7 +79,7 @@ def visualize_levels_with_psnr(image, wavelet_types, threshold=0.1, quant_step=5
             coeffs = pywt.wavedec2(image[:, :, i], wavelet, level=level)
             coeffs_all_channels.append(coeffs)
 
-        plt.figure(figsize=(15, 5 * level))
+        plt.figure(figsize=(12, 6))
 
         # Reconstruct at each level by zeroing out higher-level coefficients
         plt.subplot(1, level + 1, 1)
@@ -119,8 +119,8 @@ def visualize_levels_with_psnr(image, wavelet_types, threshold=0.1, quant_step=5
             plt.axis('off')
 
         plt.tight_layout()
-        manager = plt.get_current_fig_manager()
-        manager.window.state('zoomed')
+        
+    
         plt.show()
 
 
@@ -134,8 +134,7 @@ def visualize_levels_with_psnr(image, wavelet_types, threshold=0.1, quant_step=5
     plt.ylabel("PSNR (dB)")
     plt.legend()
     plt.grid(True, linestyle='--', alpha=0.7)
-    manager = plt.get_current_fig_manager()
-    manager.window.state('zoomed')
+    
     plt.show()
 
     # Plot SSIM values for each wavelet type
@@ -148,8 +147,7 @@ def visualize_levels_with_psnr(image, wavelet_types, threshold=0.1, quant_step=5
     plt.ylabel("SSIM")
     plt.legend()
     plt.grid(True, linestyle='--', alpha=0.7)
-    manager = plt.get_current_fig_manager()
-    manager.window.state('zoomed')
+    
     plt.show()
 
     compressed_coeffs = wavelet_compression(image, wavelet='bior1.3', quant_step=quant_step, level=level)
@@ -223,7 +221,7 @@ compressed_coeffs = wavelet_compression(image, wavelet='bior1.3', threshold=thre
 image_reconstructed = inverse_wavelet_compression(compressed_coeffs, wavelet='bior1.3', quant_step=quant_step, original_shape=original_shape)
 
 # Display the original and reconstructed images
-plt.figure(figsize=(15, 5))
+plt.figure(figsize=(10, 6))
 plt.subplot(1, 2, 1)
 plt.title("Original Image")
 plt.imshow(image)
@@ -234,8 +232,7 @@ plt.title("Reconstructed Image")
 plt.imshow(image_reconstructed)
 plt.axis('off')
 
-manager = plt.get_current_fig_manager()
-manager.window.state('zoomed')
+
 plt.show()
 # Calculate PSNR (Peak Signal-to-Noise Ratio) between original and reconstructed image
 psnr_value = psnr(image, image_reconstructed)
